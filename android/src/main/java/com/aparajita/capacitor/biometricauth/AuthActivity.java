@@ -1,21 +1,19 @@
 package com.aparajita.capacitor.biometricauth;
 
 import android.annotation.SuppressLint;
-import android.app.KeyguardManager;
 import android.content.Intent;
-import android.hardware.biometrics.BiometricManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
-import android.util.Log;
+
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
+
 import java.util.concurrent.Executor;
 
 public class AuthActivity extends AppCompatActivity {
-
-  static boolean allowDeviceCredential;
 
   @SuppressLint("WrongConstant")
   @Override
@@ -23,119 +21,77 @@ public class AuthActivity extends AppCompatActivity {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_auth_activity);
 
-    Executor executor;
+    BiometricPrompt.PromptInfo promptInfo = getPromptInfoBuilder(getIntent());
+    BiometricPrompt prompt = getBiometricPrompt();
+    prompt.authenticate(promptInfo);
+  }
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-      executor = this.getMainExecutor();
-    } else {
-      executor = command -> new Handler(this.getMainLooper()).post(command);
-    }
+  private BiometricPrompt getBiometricPrompt() {
+    return new BiometricPrompt(
+      this,
+      getExecutor(),
+      new BiometricPrompt.AuthenticationCallback() {
+        @Override
+        public void onAuthenticationError(int errorCode, @NonNull CharSequence errorMessage) {
+          super.onAuthenticationError(errorCode, errorMessage);
+          finishActivity(BiometryResultType.ERROR, errorCode, (String) errorMessage);
+        }
 
-    BiometricPrompt.PromptInfo.Builder builder =
-      new BiometricPrompt.PromptInfo.Builder();
-    Intent intent = getIntent();
-    String title = intent.getStringExtra(BiometricAuthNative.TITLE);
-    String subtitle = intent.getStringExtra(BiometricAuthNative.SUBTITLE);
-    String description = intent.getStringExtra(BiometricAuthNative.REASON);
-    allowDeviceCredential = false;
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-      // Android docs say we should check if the device is secure before enabling device credential fallback
-      KeyguardManager manager = (KeyguardManager) getSystemService(
-        KEYGUARD_SERVICE
-      );
-
-      if (manager.isDeviceSecure()) {
-        allowDeviceCredential =
-          intent.getBooleanExtra(BiometricAuthNative.DEVICE_CREDENTIAL, false);
+        @Override
+        public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+          super.onAuthenticationSucceeded(result);
+          finishActivity();
+        }
       }
-    }
+    );
+  }
 
-    // The title must be non-null and non-empty
+  private Executor getExecutor() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      return this.getMainExecutor();
+    } else {
+      return command -> new Handler(this.getMainLooper()).post(command);
+    }
+  }
+
+  // TODO: 12/21/23 Caller should make only call this if KeyguardManager.isDeviceSecure == true
+  private BiometricPrompt.PromptInfo getPromptInfoBuilder(Intent intent) {
+    BiometricPrompt.PromptInfo.Builder builder = new BiometricPrompt.PromptInfo.Builder();
+    String title = intent.getStringExtra(BiometricAuthNative.PARAMETER_TITLE);
+    String subtitle = intent.getStringExtra(BiometricAuthNative.PARAMETER_SUBTITLE);
+    String description = intent.getStringExtra(BiometricAuthNative.PARAMETER_REASON);
+
+    // The title must be non-null and non-empty // TODO: 12/21/23 Enforce title on API maybe?
     if (title == null || title.isEmpty()) {
+      // TODO: 12/26/23 Good default name?
       title = "Authenticate";
     }
 
     builder.setTitle(title).setSubtitle(subtitle).setDescription(description);
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      int authenticators = BiometricManager.Authenticators.BIOMETRIC_WEAK;
-
-      if (allowDeviceCredential) {
-        authenticators |= BiometricManager.Authenticators.DEVICE_CREDENTIAL;
-      }
-
-      builder.setAllowedAuthenticators(authenticators);
+      builder.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL);
     } else {
-      builder.setDeviceCredentialAllowed(allowDeviceCredential);
+      builder.setDeviceCredentialAllowed(true);
     }
 
-    // Android docs say that negative button text should not be set if device credential is allowed
-    if (!allowDeviceCredential) {
-      String negativeButtonText = intent.getStringExtra(
-        BiometricAuthNative.CANCEL_TITLE
-      );
-      builder.setNegativeButtonText(
-        negativeButtonText == null || negativeButtonText.isEmpty()
-          ? "Cancel"
-          : negativeButtonText
-      );
-    }
+    builder.setConfirmationRequired(intent.getBooleanExtra(BiometricAuthNative.CONFIRMATION_REQUIRED, true));
 
-    builder.setConfirmationRequired(
-      intent.getBooleanExtra(BiometricAuthNative.CONFIRMATION_REQUIRED, true)
-    );
-
-    BiometricPrompt.PromptInfo promptInfo = builder.build();
-    BiometricPrompt prompt = new BiometricPrompt(
-      this,
-      executor,
-      new BiometricPrompt.AuthenticationCallback() {
-        @Override
-        public void onAuthenticationError(
-          int errorCode,
-          @NonNull CharSequence errorMessage
-        ) {
-          super.onAuthenticationError(errorCode, errorMessage);
-          finishActivity(
-            BiometryResultType.ERROR,
-            errorCode,
-            (String) errorMessage
-          );
-        }
-
-        @Override
-        public void onAuthenticationSucceeded(
-          @NonNull BiometricPrompt.AuthenticationResult result
-        ) {
-          super.onAuthenticationSucceeded(result);
-          finishActivity();
-        }
-      }
-    );
-
-    prompt.authenticate(promptInfo);
+    return builder.build();
   }
 
-  void finishActivity() {
+  private void finishActivity() {
     finishActivity(BiometryResultType.SUCCESS, 0, "");
   }
 
-  void finishActivity(
-    BiometryResultType resultType,
-    int errorCode,
-    String errorMessage
-  ) {
+  private void finishActivity(BiometryResultType resultType, int errorCode, String errorMessage) {
     Intent intent = new Intent();
     String prefix = BiometricAuthNative.RESULT_EXTRA_PREFIX;
 
     intent
       .putExtra(prefix + BiometricAuthNative.RESULT_TYPE, resultType.toString())
       .putExtra(prefix + BiometricAuthNative.RESULT_ERROR_CODE, errorCode)
-      .putExtra(
-        prefix + BiometricAuthNative.RESULT_ERROR_MESSAGE,
-        errorMessage
-      );
+      .putExtra(prefix + BiometricAuthNative.RESULT_ERROR_MESSAGE, errorMessage);
 
     setResult(RESULT_OK, intent);
     finish();

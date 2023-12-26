@@ -5,9 +5,11 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+
 import androidx.activity.result.ActivityResult;
 import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
+
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -15,23 +17,28 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 
 @SuppressLint("RestrictedApi")
 @CapacitorPlugin(name = "BiometricAuthNative")
+// TODO: 12/21/23 I think this can be renamed safely
 public class BiometricAuthNative extends Plugin {
 
   public static final String RESULT_TYPE = "type";
   public static final String RESULT_ERROR_CODE = "errorCode";
   public static final String RESULT_ERROR_MESSAGE = "errorMessage";
-  public static final String TITLE = "androidTitle";
-  public static final String SUBTITLE = "androidSubtitle";
-  public static final String REASON = "reason";
-  public static final String CANCEL_TITLE = "cancelTitle";
-  public static final String DEVICE_CREDENTIAL = "allowDeviceCredential";
-  public static final String CONFIRMATION_REQUIRED =
-    "androidConfirmationRequired";
+
+  public static final String PARAMETER_TITLE = "androidTitle";
+  public static final String PARAMETER_SUBTITLE = "androidSubtitle";
+  public static final String PARAMETER_REASON = "reason";
+  public static final String PARAMETER_CANCEL_TITLE = "cancelTitle";
+
+  // TODO: 12/21/23 Remove allowDeviceCredential from parameters in definitions.d
+  //  public static final String PARAMETER_DEVICE_CREDENTIAL = "allowDeviceCredential";
+
+  public static final String CONFIRMATION_REQUIRED = "androidConfirmationRequired";
   public static final String MAX_ATTEMPTS = "androidMaxAttempts";
   public static final int DEFAULT_MAX_ATTEMPTS = 3;
   // Error code when biometry is not recognized
@@ -46,37 +53,16 @@ public class BiometricAuthNative extends Plugin {
     biometryErrorCodeMap = new HashMap<>();
     biometryErrorCodeMap.put(BiometricManager.BIOMETRIC_SUCCESS, "");
     biometryErrorCodeMap.put(BiometricPrompt.ERROR_CANCELED, "systemCancel");
-    biometryErrorCodeMap.put(
-      BiometricPrompt.ERROR_HW_NOT_PRESENT,
-      "biometryNotAvailable"
-    );
-    biometryErrorCodeMap.put(
-      BiometricPrompt.ERROR_HW_UNAVAILABLE,
-      "biometryNotAvailable"
-    );
+    biometryErrorCodeMap.put(BiometricPrompt.ERROR_HW_NOT_PRESENT, "biometryNotAvailable");
+    biometryErrorCodeMap.put(BiometricPrompt.ERROR_HW_UNAVAILABLE, "biometryNotAvailable");
     biometryErrorCodeMap.put(BiometricPrompt.ERROR_LOCKOUT, "biometryLockout");
-    biometryErrorCodeMap.put(
-      BiometricPrompt.ERROR_LOCKOUT_PERMANENT,
-      "biometryLockout"
-    );
-    biometryErrorCodeMap.put(
-      BiometricPrompt.ERROR_NEGATIVE_BUTTON,
-      "userCancel"
-    );
-    biometryErrorCodeMap.put(
-      BiometricPrompt.ERROR_NO_BIOMETRICS,
-      "biometryNotEnrolled"
-    );
-    biometryErrorCodeMap.put(
-      BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL,
-      "noDeviceCredential"
-    );
+    biometryErrorCodeMap.put(BiometricPrompt.ERROR_LOCKOUT_PERMANENT, "biometryLockout");
+    biometryErrorCodeMap.put(BiometricPrompt.ERROR_NEGATIVE_BUTTON, "userCancel");
+    biometryErrorCodeMap.put(BiometricPrompt.ERROR_NO_BIOMETRICS, "biometryNotEnrolled");
+    biometryErrorCodeMap.put(BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL, "noDeviceCredential");
     biometryErrorCodeMap.put(BiometricPrompt.ERROR_NO_SPACE, "systemCancel");
     biometryErrorCodeMap.put(BiometricPrompt.ERROR_TIMEOUT, "systemCancel");
-    biometryErrorCodeMap.put(
-      BiometricPrompt.ERROR_UNABLE_TO_PROCESS,
-      "systemCancel"
-    );
+    biometryErrorCodeMap.put(BiometricPrompt.ERROR_UNABLE_TO_PROCESS, "systemCancel");
     biometryErrorCodeMap.put(BiometricPrompt.ERROR_USER_CANCELED, "userCancel");
     biometryErrorCodeMap.put(BiometricPrompt.ERROR_VENDOR, "systemCancel");
   }
@@ -93,31 +79,28 @@ public class BiometricAuthNative extends Plugin {
 
   /**
    * Check the device's availability and type of biometric authentication.
+   * // TODO: 12/20/23 Rename to something better
    */
   @PluginMethod
   public void checkBiometry(PluginCall call) {
-    call.resolve(checkDeviceBiometry());
+    call.resolve(checkDeviceSecurity());
   }
 
   /**
    * Check the device's availability and type of biometric authentication.
    */
-  private JSObject checkDeviceBiometry() {
+  private JSObject checkDeviceSecurity() {
     BiometricManager manager = BiometricManager.from(getContext());
-    int biometryResult;
 
+    int biometryResult;
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      biometryResult =
-        manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK);
+      biometryResult = manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG);
     } else {
       biometryResult = manager.canAuthenticate();
     }
 
     JSObject result = new JSObject();
-    result.put(
-      "isAvailable",
-      biometryResult == BiometricManager.BIOMETRIC_SUCCESS
-    );
+    result.put("isAvailable", biometryResult == BiometricManager.BIOMETRIC_SUCCESS);
 
     biometryTypes = getDeviceBiometryTypes();
     result.put("biometryType", biometryTypes.get(0).getType());
@@ -130,32 +113,7 @@ public class BiometricAuthNative extends Plugin {
 
     result.put("biometryTypes", returnTypes);
 
-    String reason = "";
-
-    switch (biometryResult) {
-      case BiometricManager.BIOMETRIC_SUCCESS:
-        break;
-      case BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE:
-        reason = "Biometry hardware is present, but currently unavailable.";
-        break;
-      case BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED:
-        reason = "The user does not have any biometrics enrolled.";
-        break;
-      case BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE:
-        reason = "There is no biometric hardware on this device.";
-        break;
-      case BiometricManager.BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED:
-        reason =
-          "The user can’t authenticate because a security vulnerability has been discovered with one or more hardware sensors.";
-        break;
-      case BiometricManager.BIOMETRIC_ERROR_UNSUPPORTED:
-        reason =
-          "The user can’t authenticate because the specified options are incompatible with the current Android version.";
-        break;
-      case BiometricManager.BIOMETRIC_STATUS_UNKNOWN:
-        reason = "Unable to determine whether the user can authenticate.";
-        break;
-    }
+    String reason = buildReasoning(biometryResult);
 
     String errorCode = biometryErrorCodeMap.get(biometryResult);
 
@@ -192,52 +150,31 @@ public class BiometricAuthNative extends Plugin {
   }
 
   /**
-   * Prompt the user for biometric authentication.
+   * Prompt the user for biometric authentication. Ensure the user has device security enrolled first.
    */
   @PluginMethod
   public void internalAuthenticate(final PluginCall call) {
-    // Make sure biometry is available
-    JSObject checkResult = checkDeviceBiometry();
-
-    if (Boolean.FALSE.equals(checkResult.getBoolean("isAvailable", false))) {
-      call.reject(
-        checkResult.getString("reason", ""),
-        checkResult.getString("code", "")
-      );
-      return;
-    }
-
     // The result of an intent is supposed to have the package name as a prefix
     RESULT_EXTRA_PREFIX = getContext().getPackageName() + ".";
+
+    // TODO: 12/21/23 if (!KeyguardManager.isDeviceSecure) {return not enrolled error}. Shouldn't checkDeviceSecurity also do this for SDK 29 and below?
 
     Intent intent = new Intent(getContext(), AuthActivity.class);
 
     // Pass the options to the activity
-    intent.putExtra(
-      TITLE,
-      call.getString(TITLE, biometryNameMap.get(biometryTypes.get(0)))
-    );
-    intent.putExtra(SUBTITLE, call.getString(SUBTITLE));
-    intent.putExtra(REASON, call.getString(REASON));
-    intent.putExtra(CANCEL_TITLE, call.getString(CANCEL_TITLE));
-    intent.putExtra(
-      DEVICE_CREDENTIAL,
-      call.getBoolean(DEVICE_CREDENTIAL, false)
-    );
+    intent.putExtra(PARAMETER_TITLE, call.getString(PARAMETER_TITLE, biometryNameMap.get(biometryTypes.get(0))));
+    intent.putExtra(PARAMETER_SUBTITLE, call.getString(PARAMETER_SUBTITLE));
+    intent.putExtra(PARAMETER_REASON, call.getString(PARAMETER_REASON));
+    intent.putExtra(PARAMETER_CANCEL_TITLE, call.getString(PARAMETER_CANCEL_TITLE));
+    //    intent.putExtra(PARAMETER_DEVICE_CREDENTIAL, call.getBoolean(PARAMETER_DEVICE_CREDENTIAL, false));
 
     if (call.hasOption(CONFIRMATION_REQUIRED)) {
-      intent.putExtra(
-        CONFIRMATION_REQUIRED,
-        call.getBoolean(CONFIRMATION_REQUIRED, true)
-      );
+      intent.putExtra(CONFIRMATION_REQUIRED, call.getBoolean(CONFIRMATION_REQUIRED, true));
     }
 
     // Just in case the developer does something dumb like using a number < 1...
     Integer maxAttemptsConfig = call.getInt(MAX_ATTEMPTS, DEFAULT_MAX_ATTEMPTS);
-    int maxAttempts = Math.max(
-      maxAttemptsConfig == null ? 0 : maxAttemptsConfig,
-      1
-    );
+    int maxAttempts = Math.max(maxAttemptsConfig == null ? 0 : maxAttemptsConfig, 1);
     intent.putExtra(MAX_ATTEMPTS, maxAttempts);
 
     startActivityForResult(call, intent, "authenticateResult");
@@ -250,10 +187,7 @@ public class BiometricAuthNative extends Plugin {
     // If the system canceled the activity, we might get RESULT_CANCELED in resultCode.
     // In that case return that immediately, because there won't be any data.
     if (resultCode == Activity.RESULT_CANCELED) {
-      call.reject(
-        "The system canceled authentication",
-        biometryErrorCodeMap.get(BiometricPrompt.ERROR_CANCELED)
-      );
+      call.reject("The system canceled authentication", biometryErrorCodeMap.get(BiometricPrompt.ERROR_CANCELED));
       return;
     }
 
@@ -262,17 +196,11 @@ public class BiometricAuthNative extends Plugin {
     String resultTypeName = null;
 
     if (data != null) {
-      resultTypeName =
-        data.getStringExtra(
-          RESULT_EXTRA_PREFIX + BiometricAuthNative.RESULT_TYPE
-        );
+      resultTypeName = data.getStringExtra(RESULT_EXTRA_PREFIX + BiometricAuthNative.RESULT_TYPE);
     }
 
     if (resultTypeName == null) {
-      call.reject(
-        "Missing data in the result of the activity",
-        INVALID_CONTEXT_ERROR
-      );
+      call.reject("Missing data in the result of the activity", INVALID_CONTEXT_ERROR);
       return;
     }
 
@@ -281,28 +209,19 @@ public class BiometricAuthNative extends Plugin {
     try {
       resultType = BiometryResultType.valueOf(resultTypeName);
     } catch (IllegalArgumentException e) {
-      call.reject(
-        "Invalid data in the result of the activity",
-        INVALID_CONTEXT_ERROR
-      );
+      call.reject("Invalid data in the result of the activity", INVALID_CONTEXT_ERROR);
       return;
     }
 
-    int errorCode = data.getIntExtra(
-      RESULT_EXTRA_PREFIX + BiometricAuthNative.RESULT_ERROR_CODE,
-      0
-    );
-    String errorMessage = data.getStringExtra(
-      RESULT_EXTRA_PREFIX + BiometricAuthNative.RESULT_ERROR_MESSAGE
-    );
+    int errorCode = data.getIntExtra(RESULT_EXTRA_PREFIX + BiometricAuthNative.RESULT_ERROR_CODE, 0);
+    String errorMessage = data.getStringExtra(RESULT_EXTRA_PREFIX + BiometricAuthNative.RESULT_ERROR_MESSAGE);
 
     switch (resultType) {
       case SUCCESS -> call.resolve();
       // Biometry was successfully presented but was not recognized
       case FAILURE -> call.reject(errorMessage, BIOMETRIC_FAILURE);
       // The user cancelled, the system cancelled, or some error occurred.
-      // If the user cancelled, errorMessage is the text of the "negative" button,
-      // which is not especially descriptive.
+      // If the user cancelled, errorMessage is the text of the "negative" button (wtf)
       case ERROR -> {
         if (errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
           errorMessage = "Cancel button was pressed";
@@ -313,20 +232,23 @@ public class BiometricAuthNative extends Plugin {
     }
   }
 
-  enum BiometryType {
-    NONE(0),
-    FINGERPRINT(3),
-    FACE(4),
-    IRIS(5);
-
-    private final int type;
-
-    BiometryType(int type) {
-      this.type = type;
+  private String buildReasoning(int biometryResult) {
+    switch (biometryResult) {
+      case BiometricManager.BIOMETRIC_SUCCESS:
+        break;
+      case BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE:
+        return "Biometry hardware is present, but currently unavailable.";
+      case BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED:
+        return "The user does not have any biometrics enrolled.";
+      case BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE:
+        return "There is no biometric hardware on this device.";
+      case BiometricManager.BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED:
+        return "The user can’t authenticate because a security vulnerability has been discovered with one or more hardware sensors.";
+      case BiometricManager.BIOMETRIC_ERROR_UNSUPPORTED:
+        return "The user can’t authenticate because the specified options are incompatible with the current Android version.";
+      case BiometricManager.BIOMETRIC_STATUS_UNKNOWN:
+        return "Unable to determine whether the user can authenticate.";
     }
-
-    public int getType() {
-      return this.type;
-    }
+    return "";
   }
 }
