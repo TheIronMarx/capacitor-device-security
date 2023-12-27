@@ -23,7 +23,7 @@ import java.util.HashMap;
 
 @SuppressLint("RestrictedApi")
 @CapacitorPlugin(name = "BiometricAuthNative")
-// TODO: 12/21/23 I think this can be renamed safely
+// TODO: 12/21/23 I think this can be renamed
 public class BiometricAuthNative extends Plugin {
 
   public static final String RESULT_TYPE = "type";
