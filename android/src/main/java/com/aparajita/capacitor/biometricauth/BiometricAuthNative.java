@@ -2,6 +2,8 @@ package com.aparajita.capacitor.biometricauth;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.KeyguardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -78,75 +80,12 @@ public class BiometricAuthNative extends Plugin {
   private ArrayList<BiometryType> biometryTypes;
 
   /**
-   * Check the device's availability and type of biometric authentication.
-   * // TODO: 12/20/23 Rename to something better
+   * Get information about the the device security options available.
+   * Inaccurately named.
    */
   @PluginMethod
   public void checkBiometry(PluginCall call) {
     call.resolve(checkDeviceSecurity());
-  }
-
-  /**
-   * Check the device's availability and type of biometric authentication.
-   */
-  private JSObject checkDeviceSecurity() {
-    BiometricManager manager = BiometricManager.from(getContext());
-
-    int biometryResult;
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      biometryResult = manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG);
-    } else {
-      biometryResult = manager.canAuthenticate();
-    }
-
-    JSObject result = new JSObject();
-    result.put("isAvailable", biometryResult == BiometricManager.BIOMETRIC_SUCCESS);
-
-    biometryTypes = getDeviceBiometryTypes();
-    result.put("biometryType", biometryTypes.get(0).getType());
-
-    JSArray returnTypes = new JSArray();
-
-    for (BiometryType type : biometryTypes) {
-      returnTypes.put(type.getType());
-    }
-
-    result.put("biometryTypes", returnTypes);
-
-    String reason = buildReasoning(biometryResult);
-
-    String errorCode = biometryErrorCodeMap.get(biometryResult);
-
-    if (errorCode == null) {
-      errorCode = "biometryNotAvailable";
-    }
-
-    result.put("reason", reason);
-    result.put("code", errorCode);
-    return result;
-  }
-
-  private ArrayList<BiometryType> getDeviceBiometryTypes() {
-    ArrayList<BiometryType> types = new ArrayList<>();
-    PackageManager manager = getContext().getPackageManager();
-
-    if (manager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)) {
-      types.add(BiometryType.FINGERPRINT);
-    }
-
-    if (manager.hasSystemFeature(PackageManager.FEATURE_FACE)) {
-      types.add(BiometryType.FACE);
-    }
-
-    if (manager.hasSystemFeature(PackageManager.FEATURE_IRIS)) {
-      types.add(BiometryType.IRIS);
-    }
-
-    if (types.size() == 0) {
-      types.add(BiometryType.NONE);
-    }
-
-    return types;
   }
 
   /**
@@ -166,7 +105,6 @@ public class BiometricAuthNative extends Plugin {
     intent.putExtra(PARAMETER_SUBTITLE, call.getString(PARAMETER_SUBTITLE));
     intent.putExtra(PARAMETER_REASON, call.getString(PARAMETER_REASON));
     intent.putExtra(PARAMETER_CANCEL_TITLE, call.getString(PARAMETER_CANCEL_TITLE));
-    //    intent.putExtra(PARAMETER_DEVICE_CREDENTIAL, call.getBoolean(PARAMETER_DEVICE_CREDENTIAL, false));
 
     if (call.hasOption(CONFIRMATION_REQUIRED)) {
       intent.putExtra(CONFIRMATION_REQUIRED, call.getBoolean(CONFIRMATION_REQUIRED, true));
@@ -230,6 +168,73 @@ public class BiometricAuthNative extends Plugin {
         call.reject(errorMessage, biometryErrorCodeMap.get(errorCode));
       }
     }
+  }
+
+  /**
+   * Check the device's availability and type of biometric authentication.
+   */
+  private JSObject checkDeviceSecurity() {
+    BiometricManager manager = BiometricManager.from(getContext());
+
+    int biometryResult = -1;
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      int allowedAuthenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL;
+      biometryResult = manager.canAuthenticate(allowedAuthenticators);
+    } else {
+      KeyguardManager keyguardManager = (KeyguardManager) getContext().getSystemService(Context.KEYGUARD_SERVICE);
+      if (keyguardManager.isDeviceSecure()) {
+        biometryResult = 0;
+      }
+    }
+
+    JSObject result = new JSObject();
+    result.put("isAvailable", biometryResult == BiometricManager.BIOMETRIC_SUCCESS);
+
+    biometryTypes = getDeviceBiometryTypes();
+    result.put("biometryType", biometryTypes.get(0).getType());
+
+    JSArray returnTypes = new JSArray();
+
+    for (BiometryType type : biometryTypes) {
+      returnTypes.put(type.getType());
+    }
+
+    result.put("biometryTypes", returnTypes);
+
+    String reason = buildReasoning(biometryResult);
+
+    String errorCode = biometryErrorCodeMap.get(biometryResult);
+
+    if (errorCode == null) {
+      errorCode = "biometryNotAvailable";
+    }
+
+    result.put("reason", reason);
+    result.put("code", errorCode);
+    return result;
+  }
+
+  private ArrayList<BiometryType> getDeviceBiometryTypes() {
+    ArrayList<BiometryType> types = new ArrayList<>();
+    PackageManager manager = getContext().getPackageManager();
+
+    if (manager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)) {
+      types.add(BiometryType.FINGERPRINT);
+    }
+
+    if (manager.hasSystemFeature(PackageManager.FEATURE_FACE)) {
+      types.add(BiometryType.FACE);
+    }
+
+    if (manager.hasSystemFeature(PackageManager.FEATURE_IRIS)) {
+      types.add(BiometryType.IRIS);
+    }
+
+    if (types.size() == 0) {
+      types.add(BiometryType.NONE);
+    }
+
+    return types;
   }
 
   private String buildReasoning(int biometryResult) {
